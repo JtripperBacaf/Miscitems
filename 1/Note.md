@@ -88,7 +88,61 @@ When the packaged executable is run, PyInstaller performs the following steps:
 3. **Load Dependencies**: All additional dependencies, including third-party libraries and resources, are loaded into memory.
 4. **Execute the Script**: Finally, the bootloader calls the Python interpreter to execute your Python program.
 
+## PyInstaller Executable File Structure
 
+When PyInstaller packages a Python script, it bundles everything into a single executable file. This file contains several distinct parts, each with its specific function:
+
+1. **Header**:
+   - **Magic Number**: This marks the beginning of the file and indicates that it is a PyInstaller executable.
+   - **PyInstaller Version**: Specifies the version of PyInstaller that was used to create the executable.
+   - **Python Version**: The version of Python used to create the executable.
+   - **File Length**: The total size of the PyInstaller package.
+2. **CArchive (CArchive Section)**: This is the core section of the PyInstaller executable, where all the packed program files, libraries, and other resources are stored. The CArchive section includes:
+   - **Magic Number**: Typically a string like `PYTAR` that marks the start of the CArchive section.
+   - **Length of Package**: The total size of the package, including the CArchive section and other appended data.
+   - **Table of Contents (TOC)**: Contains metadata about all the files in the package, such as file paths, sizes, and offsets.
+   - **Python Version**: Indicates which Python version was used when the executable was created.
+3. **Overlay Section**:
+   - This section, which is usually located at the end of the file, contains additional resources that may be required by the program at runtime, such as images, configuration files, etc. It is optional but common in some PyInstaller executables.
+4. **Table of Contents (TOC)**:
+   - The Table of Contents stores metadata about the files in the CArchive section. It provides the necessary information (such as file names, paths, and sizes) for the PyInstaller loader to extract the files at runtime.
+5. **Entry Point**:
+   - The entry point is the code that gets executed when the PyInstaller executable is run. It typically involves loading the embedded Python interpreter, extracting necessary files from the archive, and running the main Python program.
+
+```
++-------------------+
+| Header            |  <-- Contains magic number, PyInstaller version, Python version, etc.
++-------------------+
+| CArchive          |  <-- Packed program files, libraries, and other resources
+|   + Magic Number  |  
+|   + Package Length|
+|   + Table of Contents (TOC) |
+|   + Python Version |
++-------------------+
+| Overlay (optional)|  <-- Optional section containing additional resources (images, config files)
++-------------------+
+```
+
+
+
+### How PyInstaller Works
+
+When a user runs a PyInstaller-generated executable, the following steps generally occur:
+
+1. **Loading**: The header and CArchive section are loaded into memory, starting with the magic number to ensure that the file is a valid PyInstaller executable.
+2. **Extracting the Package**: The embedded files (including Python code and dependencies) are unpacked, typically into a temporary directory (e.g., `/tmp` on Linux or `C:\Users\<username>\AppData\Local\Temp` on Windows).
+3. **Running the Python Program**: After extraction, the Python interpreter is initialized and the main Python script (or entry point) is executed.
+4. **Transparent Unpacking**: In some cases, PyInstaller will unpack the files in memory instead of writing them to disk, making the process faster and more seamless.
+
+### Differences Between PyInstaller 2.0 and 2.1+
+
+There are some key differences in the internal structure between PyInstaller versions 2.0 and 2.1+:
+
+- **PyInstaller 2.0**:
+  - The CArchive section is simpler, containing just the magic number, package length, Table of Contents (TOC) position, TOC length, and Python version. This version is less flexible compared to later versions.
+- **PyInstaller 2.1+**:
+  - Newer versions of PyInstaller added more metadata, such as the `pylibname` field (indicating the name of the Python library). The file format is more complex to support these additional features.
+  - PyInstaller 2.1+ also includes more robust handling of runtime dependencies and improves how the package is structured, including potentially a more complex overlay section.
 
 ## Reverse Analysis
 
@@ -129,4 +183,74 @@ This function is a windows API used to get the module path by the name.This call
 
 ## Get the origin code
 
-In the executable file,pyinstaller will package the code into .pyc code and unzip it into the binary.We can use binwalk to get the things
+In the executable file,pyinstaller will package the code into .pyc code and unzip it into the binary.We can use binwalk to get the things.Here we will use some tools to reverse this kind of code into source code.
+
+### [pyinstxtractor](https://github.com/extremecoders-re/pyinstxtractor.git)
+
+In this script,we can extract it into following classes:
+
+- CTOCEntry
+
+- PyInstArchive
+
+  - open
+
+  - close
+
+  - checkFile
+
+    ​	inital a chunksize=8192 and read the magic flag to check if this pack is valid.And identify the pyinstaller version based on the reading byte if contain "python"
+
+  - getCArchiveInfo
+
+  - parseTOC
+
+  - _writeRawData
+
+  - extractFiles
+
+  - _fixBarePycs
+
+  - _writePyc
+
+  - _extractPyz
+
+General process:
+
+> 1. Create `PyinsArchive` object
+> 2. call `open` to open the file
+> 3.  checkFile is valid
+> 4. get the table of content
+> 5. extract Files based on the table of content
+
+After execute this script,the file will be devided into 3 kind:
+
+- .pyz:a zip file used to zip multiple files
+- .pyd:dynamic module of python(like dll)
+- .pyc:compiled python code.
+
+### uncompyle6
+
+```bash
+pip install uncompyle6
+uncompyle6 -o <output_directory> <path_to_pyc_file>
+```
+
+In the file generate by pyinstxtractor,we can see a file named `test.pyc`,we can compile it into python code
+
+However,for high version of python,this tools will not work.
+
+### decompyle3
+
+```
+pip install decompyle3
+```
+
+### online tools
+
+[pyc dis](https://tool.lu/pyc)
+
+[pycdc](https://github.com/zrax/pycdc.git):A C++ based pyc disassemble tools
+
+ ![image-20241213193842868](./assets/image-20241213193842868.png)
+
